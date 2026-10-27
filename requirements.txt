@@ -1,0 +1,5 @@
+certifi
+nba_api
+pandas
+plotly
+streamlit

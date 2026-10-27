@@ -1,0 +1,15 @@
+.venv/
+.agents/
+__pycache__/
+*.py[cod]
+.DS_Store
+.vscode/
+.pytest_cache/
+.coverage
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+.codex-backup-*/
+data/season_store/raw/
+

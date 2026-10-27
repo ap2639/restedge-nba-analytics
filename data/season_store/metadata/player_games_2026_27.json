@@ -1,0 +1,13 @@
+{
+  "season": "2026-27",
+  "source": "NBA stats player game logs",
+  "fetched_at_utc": "2026-10-27T16:50:46.367640+00:00",
+  "first_game_date": "2026-10-20",
+  "last_game_date": "2026-10-26",
+  "player_game_records": 1181,
+  "players": 411,
+  "teams": 30,
+  "raw_columns": 72,
+  "processed_columns": 74,
+  "resolved_duplicate_player_game_rows": 1
+}
