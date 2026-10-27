@@ -11,6 +11,7 @@ usable, testable, and honest about data freshness.
 - [x] Add automated application and calculation tests.
 - [x] Prepare GitHub Actions, deployment configuration, and public documentation.
 - [x] Add current-season and historical fallback datasets.
+- [x] Add a dashboard season switch for 2025-26 and 2026-27.
 - [ ] Publish the GitHub repository.
 - [ ] Deploy the interactive application through Streamlit Community Cloud.
 
@@ -30,7 +31,8 @@ usable, testable, and honest about data freshness.
 
 - [x] Add live player-specific headlines with source and timestamp.
 - [x] Add hourly caching and manual refresh.
-- [x] Separate official, injury-related, and general headline labels.
+- [x] Prioritize official, injury, availability, rest, and workload headlines.
+- [x] Filter unrelated player recaps from the availability workspace.
 - [ ] Ingest official NBA injury reports as structured records.
 - [ ] Match availability records using stable player identifiers.
 - [ ] Preserve the time each status was first observed.
@@ -43,10 +45,12 @@ usable, testable, and honest about data freshness.
 - [x] Compare it with a simple rest-aware model.
 - [x] Report Brier score, log loss, calibration context, and sample size.
 - [x] Add transparent expected-minutes and manual scenarios.
+- [x] Seed 2026-27 evaluation with 2025-26 history.
+- [x] Update current-season predictions only after each completed result.
 - [ ] Add opponent defense, venue, pace, travel, and recent-workload features.
 - [ ] Add teammate availability and projected-role features.
 - [ ] Add prediction intervals and sample-quality indicators.
-- [ ] Maintain historical training data separately from current-season scoring.
+- [x] Maintain historical training data separately from current-season scoring.
 
 ## Phase 5: Advanced differentiators
 

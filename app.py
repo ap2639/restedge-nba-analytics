@@ -16,7 +16,7 @@ from analytics import (
     summarize_by_rest,
 )
 from insights import build_all_rest_insights
-from modeling import chronological_player_backtest
+from modeling import chronological_player_backtest, prior_season_to_current_backtest
 from news import fetch_live_player_news, load_player_news, merge_news_items
 from scenario import build_scenario_projection
 
@@ -98,7 +98,10 @@ def apply_styles() -> None:
         .nav-link {{ border-radius:7px; color:{COLORS['ink']}; cursor:pointer; flex:0 0 auto; font-size:.65rem; font-weight:750; padding:.52rem .48rem .38rem; text-decoration:none!important; transition:background-color .15s ease; white-space:nowrap; }}
         .nav-link:hover {{ background:{COLORS['soft']}; color:{COLORS['ink']}; }}
         .nav-link.active::after {{ background:{COLORS['ink']}; content:""; display:block; height:3px; margin:5px auto 0; width:4px; }}
-        .season-chip {{ background:{COLORS['ink']}; border-radius:8px; color:#fff; font-size:.67rem; font-weight:800; letter-spacing:.05em; padding:.65rem .85rem; text-transform:uppercase; }}
+        .season-switcher {{ background:{COLORS['ink']}; border-radius:8px; display:flex; gap:.2rem; padding:.22rem; }}
+        .season-option {{ border-radius:6px; color:#aeb1ad; font-size:.58rem; font-weight:850; letter-spacing:.04em; padding:.48rem .55rem; text-decoration:none!important; text-transform:uppercase; white-space:nowrap; }}
+        .season-option:hover {{ background:#292b2f; color:#fff; }}
+        .season-option.active {{ background:{COLORS['lime']}; color:{COLORS['ink']}; }}
         .control-title {{ color:{COLORS['ink']}; font-size:.72rem; font-style:italic; font-weight:900; letter-spacing:.04em; margin:.15rem 0 .4rem; text-transform:uppercase; }}
         .rest-strip {{ background:{COLORS['black']}; border-radius:12px; margin-top:.85rem; padding:.8rem; }}
         .strip-header {{ align-items:center; color:#fff; display:flex; font-size:.75rem; font-style:italic; font-weight:900; justify-content:space-between; margin:0 .15rem .55rem; text-transform:uppercase; }}
@@ -214,13 +217,13 @@ def current_page() -> str:
     return page if page in PAGES else "home"
 
 
-def render_navigation(page: str, season_label: str) -> None:
+def render_navigation(page: str, season_label: str, seasons: list[str]) -> None:
     links = "".join(
-        f'<a class="nav-link{" active" if slug == page else ""}" href="?page={slug}" target="_self">{label}</a>'
+        f'<a class="nav-link{" active" if slug == page else ""}" href="?page={slug}&season={season_label}" target="_self">{label}</a>'
         for slug, label in PAGES.items()
     )
     rail_links = "".join(
-        f'<a class="rail-item{" active" if slug == page else ""}" href="?page={slug}" target="_self" '
+        f'<a class="rail-item{" active" if slug == page else ""}" href="?page={slug}&season={season_label}" target="_self" '
         f'title="{label}" style="text-decoration:none">{short}</a>'
         for slug, label, short in [
             ("home", "Home", "HM"),
@@ -232,15 +235,20 @@ def render_navigation(page: str, season_label: str) -> None:
             ("model-lab", "Model Lab", "MDL"),
         ]
     )
+    season_links = "".join(
+        f'<a class="season-option{" active" if season == season_label else ""}" '
+        f'href="?page={page}&season={season}" target="_self">{escape(season)}</a>'
+        for season in seasons
+    )
     st.html(
         f"""
         <div class="side-rail">
             <div class="rail-brand">RE</div>{rail_links}
-            <div class="rail-spacer"></div><a class="rail-item" href="?page=methodology" target="_self" title="Methodology" style="text-decoration:none">?</a>
+            <div class="rail-spacer"></div><a class="rail-item" href="?page=methodology&season={season_label}" target="_self" title="Methodology" style="text-decoration:none">?</a>
         </div>
         <div class="top-nav"><div class="brand">RestEdge</div>
             <div class="nav-links">{links}</div>
-            <div class="season-chip">NBA {escape(season_label)}</div></div>
+            <div class="season-switcher">{season_links}</div></div>
         """
     )
 
@@ -305,9 +313,22 @@ def format_news_age(published_at: datetime) -> str:
     return f"{days}d ago"
 
 
-def resolve_data_path() -> Path:
-    versioned = sorted(VERSIONED_DATA_DIR.glob("player_games_*.csv.gz"), reverse=True)
-    return versioned[0] if versioned else LEGACY_DATA_PATH
+def available_data_sources() -> dict[str, Path]:
+    """Return checked-in season datasets keyed by NBA season label."""
+    sources = {"2025-26": LEGACY_DATA_PATH}
+    for path in VERSIONED_DATA_DIR.glob("player_games_*.csv.gz"):
+        slug = path.name.removeprefix("player_games_").removesuffix(".csv.gz")
+        parts = slug.split("_")
+        if len(parts) == 2 and all(part.isdigit() for part in parts):
+            sources[f"{parts[0]}-{parts[1]}"] = path
+    return dict(sorted(sources.items()))
+
+
+def selected_season(sources: dict[str, Path]) -> str:
+    requested = st.query_params.get("season")
+    if isinstance(requested, list):
+        requested = requested[0] if requested else None
+    return requested if requested in sources else sorted(sources)[-1]
 
 
 def load_active_metadata(data_path: Path) -> dict | None:
@@ -453,7 +474,7 @@ def make_model_chart(predictions: pd.DataFrame) -> go.Figure:
         plot_bgcolor=COLORS["card"],
         font={"family": "Arial", "color": COLORS["muted"]},
         yaxis={"title": "Above-threshold probability", "tickformat": ".0%", "range": [0, 1], "gridcolor": COLORS["line"]},
-        xaxis={"title": "Historical prediction date", "gridcolor": COLORS["line"]},
+        xaxis={"title": "Evaluation date", "gridcolor": COLORS["line"]},
         legend={"orientation": "h", "y": 1.12},
     )
     return figure
@@ -582,6 +603,7 @@ def player_context(
     catalog: pd.DataFrame,
     player_labels: dict,
     page: str,
+    season_label: str,
 ) -> dict:
     st.html('<div class="control-title">Player performance controls</div>')
     control_columns = st.columns([2.1, 1.05, 0.9, 1.25])
@@ -640,6 +662,7 @@ def player_context(
         "rest_column": rest_column,
         "summary": summary,
         "overall": overall,
+        "season_label": season_label,
     }
 
 
@@ -740,8 +763,8 @@ def render_slate_page(games: pd.DataFrame, metadata: dict | None = None) -> None
 
 def render_news_page(context: dict) -> None:
     render_visual_guide(
-        "News timeline",
-        "Headlines are searched using the selected player's exact name plus NBA, limited to the last seven days. Each card shows the publisher, publication time, freshness, and whether the headline appears to be an official, injury, or general report.",
+        "Rest and availability monitor",
+        "Headlines are searched using the selected player's exact name plus injury, availability, rest, workload, and minutes-status terms. Official and injury updates are ranked first, followed by availability and workload reporting.",
     )
     refresh_column, status_column = st.columns([0.25, 0.75])
     with refresh_column:
@@ -758,6 +781,7 @@ def render_news_page(context: dict) -> None:
     live_items = list(live_result.items) if live_result else []
     news_items = merge_news_items(live_items, local_items)
     injury_count = sum(item.item_type in {"official_update", "injury_update"} for item in news_items)
+    workload_count = sum(item.item_type == "rest_workload" for item in news_items)
     source_count = len({item.source for item in news_items})
 
     with status_column:
@@ -783,9 +807,9 @@ def render_news_page(context: dict) -> None:
 
     render_metric_cards(
         [
-            ("Fresh headlines", str(len(news_items)), "Past seven days"),
-            ("Status or injury", str(injury_count), "Headline classification"),
-            ("Publishers", str(source_count), "Distinct attributed sources"),
+            ("Relevant updates", str(len(news_items)), "Past seven days"),
+            ("Injury or official", str(injury_count), "Highest-priority headlines"),
+            ("Rest or workload", str(workload_count), "Minutes and recovery context"),
             ("Player", context["team_abbreviation"], context["player_name"]),
         ]
     )
@@ -795,7 +819,7 @@ def render_news_page(context: dict) -> None:
         for item in news_items[:12]:
             published = item.published_at.strftime("%b %d, %Y %H:%M UTC")
             item_label = item.item_type.replace("_", " ").title()
-            card_class = "official" if item.item_type == "official_update" else "injury" if item.item_type == "injury_update" else "reporting"
+            card_class = "official" if item.item_type == "official_update" else "injury" if item.item_type in {"injury_update", "availability_update", "rest_workload"} else "reporting"
             news_cards.append(
                 f'<div class="news-card {card_class}"><div class="news-title"><a href="{escape(item.url, quote=True)}" target="_blank" rel="noopener noreferrer">{escape(item.title)}</a></div>'
                 f'<div class="news-meta"><span class="news-tag">{escape(item_label)}</span>{escape(item.source)} · {escape(published)} · {escape(format_news_age(item.published_at))}</div></div>'
@@ -810,7 +834,7 @@ def render_news_page(context: dict) -> None:
     st.html(
         '<div class="method-grid">'
         '<div class="method-card"><h3>Official availability</h3><p>NBA.com headlines are marked as official updates. Headline classification does not replace the league injury report or a team announcement.</p></div>'
-        '<div class="method-card"><h3>Reporting timeline</h3><p>Results are ordered newest first, attributed to their publisher, and restricted to a seven-day window.</p></div>'
+            '<div class="method-card"><h3>Priority timeline</h3><p>Official and injury headlines are ranked first. Availability, minutes, rest, and workload reports follow, with newer items first inside each group.</p></div>'
         '<div class="method-card"><h3>Potential model impact</h3><p>News remains informational. RestEdge never changes projections automatically from a headline; use Scenario Lab to enter an explicit minutes or role assumption.</p></div>'
         "<div class=\"method-card\"><h3>Coverage limits</h3><p>The feed searches every selectable player's exact name, but publishers can omit names, revise articles, or delay reports. Verify material news at the linked source.</p></div>"
         '</div>'
@@ -860,31 +884,54 @@ def render_scenario_page(context: dict) -> None:
     render_html_table(component_table)
 
 
-def render_model_page(context: dict) -> None:
-    predictions, metrics = chronological_player_backtest(
-        context["player_games"], context["stat_column"], context["line"], context["rest_column"]
-    )
+def render_model_page(context: dict, historical_games: pd.DataFrame | None = None) -> None:
+    uses_prior_season = context["season_label"] == "2026-27" and historical_games is not None
+    if uses_prior_season:
+        player_history = historical_games[
+            historical_games["PLAYER_ID"] == context["player_id"]
+        ].copy()
+        predictions, metrics = prior_season_to_current_backtest(
+            player_history,
+            context["player_games"],
+            context["stat_column"],
+            context["line"],
+            context["rest_column"],
+        )
+    else:
+        predictions, metrics = chronological_player_backtest(
+            context["player_games"], context["stat_column"], context["line"], context["rest_column"]
+        )
     if predictions.empty:
-        st.warning("This player does not have enough eligible games for a chronological backtest.")
+        message = (
+            "This player does not yet have enough prior-season or current-season history for a 2026–27 evaluation."
+            if uses_prior_season
+            else "This player does not have enough eligible games for a chronological backtest."
+        )
+        st.warning(message)
         return
     render_visual_guide(
         "Probability history",
-        "The gray line is the rolling recent-form baseline, the purple line adds a prior-game rest adjustment, and green dots show whether the over actually occurred. Every point is generated without using future games.",
+        (
+            "Each 2026–27 point starts with 2025–26 history, then incorporates only earlier completed 2026–27 games. The gray line is the rolling baseline, the purple line adds a rest adjustment, and green dots show actual outcomes."
+            if uses_prior_season
+            else "The gray line is the rolling recent-form baseline, the purple line adds a prior-game rest adjustment, and green dots show whether the over actually occurred. Every point is generated without using future games."
+        ),
     )
     st.plotly_chart(make_model_chart(predictions), width="stretch")
     display = metrics.copy()
     for column in ["Brier score", "Log loss", "Mean absolute error"]:
         display[column] = display[column].map(lambda value: f"{value:.3f}")
-    for column in ["Average predicted over", "Observed over rate"]:
+    for column in ["Average predicted above", "Observed above rate"]:
         display[column] = display[column].map(lambda value: f"{value:.1%}")
     render_visual_guide(
         "Validation table",
-        "Lower Brier score, log loss, and mean absolute error are better. Average predicted over should be reasonably close to the observed over rate; this is a basic calibration check.",
+        "Lower Brier score, log loss, and mean absolute error are better. Average predicted above-threshold probability should be reasonably close to the observed rate; this is a basic calibration check.",
     )
     render_html_table(display)
     st.html(
         '<div class="status-panel" style="margin-top:.7rem"><div class="status-title">Model maturity: prototype</div>'
-        '<div class="status-copy">This backtest is leakage-aware but intentionally simple. It does not yet include opponent, venue, expected minutes, injuries, pace, or role changes and must not be presented as a production forecasting model.</div>'
+        + ('<div class="status-copy">The 2026–27 evaluation is seeded with 2025–26 player history and updates only after each completed current-season game. ' if uses_prior_season else '<div class="status-copy">This same-season backtest uses only games completed before each prediction. ')
+        + 'It does not yet include opponent, venue, expected minutes, structured injury status, pace, or role changes and must not be presented as a production forecast.</div>'
         '<div class="status-badge">Research model</div></div>'
     )
 
@@ -902,6 +949,7 @@ def render_methodology_page(games: pd.DataFrame, metadata: dict | None = None) -
             <div class="method-card"><h3>Rest groups</h3><p>Back-to-back means zero full days off, regular rest means one full day off, and extended rest means two or more full days off.</p></div>
             <div class="method-card"><h3>Above-threshold rate</h3><p>A result is counted above the threshold only when the recorded statistic is greater than the selected value. The displayed rate is above-threshold results divided by eligible games.</p></div>
             <div class="method-card"><h3>Performance comparison</h3><p>The dashboard compares sample size, average production, and above-threshold frequency across rest conditions without converting those results into prices or payouts.</p></div>
+            <div class="method-card"><h3>Cross-season model</h3><p>The 2026–27 Model Lab starts with 2025–26 player history, then adds only earlier completed 2026–27 games before evaluating each new result. This preserves chronological separation.</p></div>
             <div class="method-card"><h3>Current limitations</h3><p>The descriptive release does not yet control for opponent, venue, expected minutes, injuries, teammate availability, pace, or role changes.</p></div>
             <div class="method-card"><h3>Responsible interpretation</h3><p>Small samples can move sharply after one result. RestEdge reports sample sizes and treats rest splits as descriptive context rather than guaranteed future performance.</p></div>
         </div>
@@ -922,15 +970,20 @@ def render_methodology_page(games: pd.DataFrame, metadata: dict | None = None) -
 
 
 apply_styles()
-active_data_path = resolve_data_path()
+data_sources = available_data_sources()
+season_label = selected_season(data_sources)
+active_data_path = data_sources[season_label]
 games = load_data(str(active_data_path))
 active_metadata = load_active_metadata(active_data_path)
+historical_model_games = (
+    load_data(str(data_sources["2025-26"]))
+    if season_label == "2026-27" and "2025-26" in data_sources
+    else None
+)
 catalog = build_player_catalog(games)
 player_labels = dict(zip(catalog["PLAYER_ID"], catalog["LABEL"]))
 page = current_page()
-season_values = games.get("SEASON_YEAR", pd.Series(dtype=str)).dropna().astype(str)
-season_label = season_values.mode().iloc[0] if not season_values.empty else "Historical"
-render_navigation(page, season_label)
+render_navigation(page, season_label, list(data_sources))
 
 if page == "slate":
     render_slate_page(games, active_metadata)
@@ -942,14 +995,14 @@ else:
         "markets": ("Stat comparison", "Performance Splits", "Study rest splits and how historical above-threshold frequency changes across nearby values."),
         "players": ("Player intelligence", "Players", "Inspect a player's season profile, recent form, and recorded outcomes against a selected line."),
         "scenario-lab": ("Assumption testing", "Scenario Lab", "Test minutes, rest, and explicit manual adjustments without disguising assumptions as model outputs."),
-        "news": ("Information center", "News", "Player-specific news infrastructure with source, timestamp, and freshness requirements."),
-        "model-lab": ("Validation workspace", "Model Lab", "Chronologically compare a recent-form baseline with a simple rest-aware probability model."),
+        "news": ("Availability center", "Rest & Injury News", "Prioritized player news covering injuries, availability, workload, rest, and minutes status."),
+        "model-lab": ("Validation workspace", "Model Lab", "Use 2025–26 history to evaluate 2026–27 results without using future games."),
     }
     render_page_heading(*page_headings[page])
     context = (
         news_player_context(games, catalog, player_labels)
         if page == "news"
-        else player_context(games, catalog, player_labels, page)
+        else player_context(games, catalog, player_labels, page, season_label)
     )
 
     if page == "home":
@@ -1017,7 +1070,7 @@ else:
     elif page == "news":
         render_news_page(context)
     elif page == "model-lab":
-        render_model_page(context)
+        render_model_page(context, historical_model_games)
 
 st.html(
     '<div class="method-note"><strong>Research use only.</strong> RestEdge summarizes player performance and does not provide financial or wagering recommendations. Player and team images load from the NBA content delivery network when available.</div>'

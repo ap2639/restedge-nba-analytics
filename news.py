@@ -17,6 +17,19 @@ import certifi
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 MAX_FEED_BYTES = 2_000_000
 REQUIRED_FIELDS = {"player_id", "title", "source", "url", "published_at", "item_type"}
+INJURY_TERMS = (
+    "injury", "injured", "questionable", "doubtful", "ruled out", "out for",
+    "game-time decision", "gtd", "diagnosis", "surgery", "sprain", "strain",
+    "fracture", "concussion", "illness", "recovery", "rehab", "return timetable",
+)
+AVAILABILITY_TERMS = (
+    "available", "availability", "active", "inactive", "status", "returns",
+    "returning", "cleared", "will play", "won't play", "will not play", "dnp",
+)
+REST_TERMS = (
+    "rest", "rested", "load management", "minutes restriction", "minutes limit",
+    "workload", "back-to-back", "maintenance",
+)
 
 
 @dataclass(frozen=True)
@@ -82,20 +95,49 @@ def load_player_news(file_path: str | Path, player_id: int) -> list[NewsItem]:
 
 
 def build_player_news_url(player_name: str, days: int = 7) -> str:
-    """Build an exact-name NBA Google News RSS query."""
+    """Build an exact-name Google News query focused on availability and workload."""
     safe_days = max(1, min(int(days), 30))
-    query = quote_plus(f'"{player_name.strip()}" NBA when:{safe_days}d')
+    query = quote_plus(
+        f'"{player_name.strip()}" NBA '
+        '(injury OR injured OR questionable OR doubtful OR status OR available OR rest '
+        'OR "minutes restriction" OR workload OR recovery) '
+        f'when:{safe_days}d'
+    )
     return f"{GOOGLE_NEWS_RSS}?q={query}&hl=en-US&gl=US&ceid=US:en"
 
 
 def _classify_item(title: str, source: str) -> str:
     title_lower = title.lower()
     source_lower = source.lower()
-    if source_lower == "nba.com" or "official" in source_lower:
+    relevant_terms = INJURY_TERMS + AVAILABILITY_TERMS + REST_TERMS
+    if (
+        source_lower == "nba.com" or "official" in source_lower
+    ) and any(term in title_lower for term in relevant_terms):
         return "official_update"
-    if any(term in title_lower for term in ("injury", "injured", "status", "ruled out", "questionable")):
+    if any(term in title_lower for term in INJURY_TERMS):
         return "injury_update"
+    if any(term in title_lower for term in REST_TERMS):
+        return "rest_workload"
+    if any(term in title_lower for term in AVAILABILITY_TERMS):
+        return "availability_update"
     return "reporting"
+
+
+def is_rest_or_injury_news(item: NewsItem) -> bool:
+    """Return whether a headline is relevant to rest, injury, or availability."""
+    title = item.title.lower()
+    return item.item_type in {
+        "official_update", "injury_update", "availability_update", "rest_workload"
+    } or any(term in title for term in INJURY_TERMS + AVAILABILITY_TERMS + REST_TERMS)
+
+
+def _news_priority(item: NewsItem) -> int:
+    return {
+        "official_update": 4,
+        "injury_update": 3,
+        "availability_update": 2,
+        "rest_workload": 1,
+    }.get(item.item_type, 0)
 
 
 def parse_google_news_rss(
@@ -125,16 +167,16 @@ def parse_google_news_rss(
         published_at = _as_utc(parsedate_to_datetime(published_text))
         if published_at < cutoff or published_at > current_time + timedelta(hours=6):
             continue
-        items.append(
-            NewsItem(
-                player_id=int(player_id),
-                title=title,
-                source=source,
-                url=_validated_url(url),
-                published_at=published_at,
-                item_type=_classify_item(title, source),
-            )
+        item = NewsItem(
+            player_id=int(player_id),
+            title=title,
+            source=source,
+            url=_validated_url(url),
+            published_at=published_at,
+            item_type=_classify_item(title, source),
         )
+        if is_rest_or_injury_news(item):
+            items.append(item)
 
     return merge_news_items(items)[: max(1, int(limit))]
 
@@ -170,13 +212,19 @@ def fetch_live_player_news(
 
 
 def merge_news_items(*collections: list[NewsItem] | tuple[NewsItem, ...]) -> list[NewsItem]:
-    """Combine feeds, remove duplicate headlines, and return newest first."""
+    """Combine feeds, keep relevant items, and rank priority before freshness."""
     unique_items = {}
     for collection in collections:
         for item in collection:
+            if not is_rest_or_injury_news(item):
+                continue
             key = " ".join(item.title.lower().split())
             current = unique_items.get(key)
             if current is None or item.published_at > current.published_at:
                 unique_items[key] = item
-    return sorted(unique_items.values(), key=lambda item: item.published_at, reverse=True)
+    return sorted(
+        unique_items.values(),
+        key=lambda item: (_news_priority(item), item.published_at),
+        reverse=True,
+    )
 

@@ -17,15 +17,15 @@ communication. It does not place wagers or provide financial recommendations.
 |---|---|
 | 2026-27 completed player-game tracking | Active through October 26, 2026 |
 | Update frequency | Daily GitHub Actions workflow after deployment |
-| Player news | Live seven-day search, cached for one hour |
-| Historical fallback | Complete 2025-26 regular-season dataset |
+| Player news | Rest, injury, availability, and workload search, cached for one hour |
+| Historical season | Complete 2025-26 regular-season dataset, selectable in the dashboard |
 | In-game tracking | Not implemented; the project never labels daily data as real-time |
-| Forecasting | Transparent research prototype, not a production model |
+| Forecasting | 2025-26 history evaluated on completed 2026-27 games without future-data leakage |
 
 The active 2026-27 dataset currently contains **1,181 player-game records**, **411
 players**, and **all 30 NBA teams**. The application automatically uses the newest
-validated season file and falls back to the checked-in 2025-26 dataset if a
-current-season refresh is unavailable.
+validated season file. A season switch in the header lets users study either
+2025-26 or 2026-27 without combining their descriptive statistics.
 
 ## Dashboard tour
 
@@ -39,10 +39,11 @@ current-season refresh is unavailable.
   game results.
 - **Scenario Lab:** an assumption calculator for expected minutes, rest scenario,
   and an explicit manual production adjustment.
-- **News:** recent player-specific headlines with publisher, timestamp, freshness,
-  and official/injury/reporting labels.
-- **Model Lab:** chronological recent-form and rest-aware backtests using only
-  information available before each historical game.
+- **News:** prioritized player-specific injury, availability, rest, workload, and
+  minutes-status headlines with publisher, timestamp, and freshness.
+- **Model Lab:** 2025-26 player history seeds the 2026-27 evaluation, which then
+  updates only from earlier completed current-season games. The historical season
+  remains available for a same-season chronological backtest.
 - **Methodology:** calculation definitions, limitations, coverage, freshness, and
   dataset-integrity checks.
 
@@ -53,7 +54,9 @@ current-season refresh is unavailable.
 - Small samples are labeled rather than presented as stable evidence.
 - Model evaluation uses chronological history to avoid future-game leakage.
 - Live headlines never change a projection automatically.
-- Current-season records remain separate from the historical fallback dataset.
+- Current-season records remain separate from historical descriptive summaries.
+- Current-season model evaluation starts with prior-season records and adds each
+  2026-27 result only after its prediction has been generated.
 - Ambiguous duplicate player-game records stop the update instead of being
   silently accepted. Exact duplicates and a single zero-minute upstream duplicate
   can be resolved through tested rules and are reported in metadata.
@@ -115,14 +118,23 @@ pipeline daily and commits only processed data and metadata.
 ## Player news
 
 The News workspace searches Google News RSS using the selected player's exact
-name plus NBA. Results are limited to seven days, attributed to the publisher,
-ordered newest first, and cached for one hour. A manual refresh button is also
-available.
+name plus injury, availability, rest, workload, recovery, and minutes-status
+terms. Results are limited to seven days, attributed to the publisher, and cached
+for one hour. Official and injury updates are ranked before availability and
+workload reporting. Unrelated game recaps are filtered out, and a manual refresh
+button is available.
 
-Headline classifications are informational. An NBA.com headline is labeled as an
-official update, while injury-related wording receives an injury label. Users
-should still verify material availability information through the linked team or
-NBA source.
+Headline classifications are informational. Users should still verify material
+availability information through the linked team or NBA source.
+
+## Two-season model design
+
+The newly started 2026-27 season is too small to support a stable standalone
+player model. RestEdge therefore uses 2025-26 as the starting history for players
+who appeared in both seasons. For every completed 2026-27 game, the model uses the
+prior season plus only earlier 2026-27 results. Rookies and players without enough
+prior history remain explicitly unavailable rather than receiving invented
+estimates.
 
 ## Deploy with Streamlit Community Cloud
 
@@ -147,6 +159,8 @@ The application uses `requirements.txt`, `runtime.txt`, and
 - The research model does not yet include opponent quality, venue, pace, travel,
   expected role, official injury status, or teammate availability.
 - News coverage depends on publisher indexing and can be incomplete or delayed.
+- Cross-season player roles can change, so prior-season history is a baseline,
+  not proof that the current role or production distribution is unchanged.
 - Rest relationships are observational and do not establish causation.
 - A higher historical threshold rate does not guarantee future performance.
 

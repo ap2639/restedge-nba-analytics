@@ -27,7 +27,10 @@ class DashboardTests(unittest.TestCase):
             "home", "slate", "markets", "players", "scenario-lab", "news",
             "model-lab", "methodology",
         ]:
-            self.assertIn(f'href="?page={page}"', rendered_html)
+            self.assertIn(f'href="?page={page}&season=2026-27"', rendered_html)
+
+        self.assertIn('href="?page=home&season=2025-26"', rendered_html)
+        self.assertIn('href="?page=home&season=2026-27"', rendered_html)
 
         app.selectbox[1].set_value("Rebounds").run()
         self.assertFalse(app.exception)
@@ -67,6 +70,17 @@ class DashboardTests(unittest.TestCase):
                     self.assertEqual(len(app.get("plotly_chart")), charts)
                 self.assertEqual(len(app.dataframe), 0)
                 self.assertEqual(len(app.code), 0)
+
+    def test_historical_season_can_be_selected(self):
+        app = AppTest.from_file(str(PROJECT_ROOT / "app.py"), default_timeout=20)
+        app.query_params["season"] = "2025-26"
+        app.query_params["page"] = "methodology"
+        app.run()
+
+        self.assertFalse(app.exception)
+        rendered_html = "\n".join(block.value for block in app.get("html"))
+        self.assertIn('season-option active" href="?page=methodology&season=2025-26"', rendered_html)
+        self.assertIn("Historical dataset", rendered_html)
 
 
 if __name__ == "__main__":
