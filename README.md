@@ -1,6 +1,9 @@
 # RestEdge
 
 [![Tests](https://github.com/ap2639/restedge-nba-analytics/actions/workflows/tests.yml/badge.svg)](https://github.com/ap2639/restedge-nba-analytics/actions/workflows/tests.yml)
+[![Open RestEdge](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://lgh4tgas5zmq3v5ndxwvid.streamlit.app/)
+
+**Live application:** [Open RestEdge on Streamlit Community Cloud](https://lgh4tgas5zmq3v5ndxwvid.streamlit.app/)
 
 RestEdge is an NBA player-performance research application built with Python,
 pandas, Streamlit, and Plotly. It studies how schedule rest relates to points,
@@ -140,7 +143,8 @@ estimates.
 
 GitHub Pages cannot execute a Python Streamlit server. The GitHub repository
 stores and documents the project; Streamlit Community Cloud hosts the interactive
-application.
+application. The current public deployment is available at
+[lgh4tgas5zmq3v5ndxwvid.streamlit.app](https://lgh4tgas5zmq3v5ndxwvid.streamlit.app/).
 
 1. Push this repository to GitHub.
 2. Sign in to [Streamlit Community Cloud](https://share.streamlit.io/).
