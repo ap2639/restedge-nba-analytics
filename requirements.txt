@@ -2,4 +2,5 @@ certifi
 nba_api
 pandas
 plotly
+requests
 streamlit

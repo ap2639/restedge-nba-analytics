@@ -19,7 +19,7 @@ communication. It does not place wagers or provide financial recommendations.
 | Capability | Current status |
 |---|---|
 | 2026-27 completed player-game tracking | Active through October 26, 2026 |
-| Update frequency | Daily GitHub Actions workflow after deployment |
+| Update frequency | Daily workflow with retries; validated data is preserved during source outages |
 | Player news | Rest, injury, availability, and workload search, cached for one hour |
 | Historical season | Complete 2025-26 regular-season dataset, selectable in the dashboard |
 | In-game tracking | Not implemented; the project never labels daily data as real-time |
@@ -155,6 +155,11 @@ application. The current public deployment is available at
 
 The application uses `requirements.txt`, `runtime.txt`, and
 `.streamlit/config.toml` during deployment.
+
+The scheduled updater retries temporary NBA source failures. If the source is
+still unavailable, it keeps the last validated dataset, exits successfully, and
+tries again at the next scheduled run instead of overwriting data with a partial
+or empty response.
 
 ## Limitations
 
